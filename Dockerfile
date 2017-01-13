@@ -2,9 +2,11 @@ FROM ubuntu:latest
 MAINTAINER Nagasuga
 
 # update and install basic tools
-RUN apt-get update && apt-get upgrade -y
-RUN apt-get install -yq curl software-properties-common
-
+RUN \
+    sed -i 's/# \(.*multiverse$\)/\1/g' /etc/apt/sources.list && \   
+    apt-get update && apt-get upgrade -y
+RUN apt-get install -yq curl software-properties-common && \
+    apt-get install -yq python
 
 # install java
 RUN \
@@ -32,10 +34,35 @@ ENV PATH $HADOOP_HOME/bin:$PATH
 
 # install hive
 RUN mkdir /usr/local/hive
-RUN curl -s http://apache.mesi.com.ar/hive/hive-2.1.0/apache-hive-2.1.0-bin.tar.gz | tar -xz -C /usr/local/hive --strip-components 1
+RUN curl -s http://apache.mesi.com.ar/hive/hive-2.1.1/apache-hive-2.1.1-bin.tar.gz | tar -xz -C /usr/local/hive --strip-components 1
 ENV HIVE_HOME /usr/local/hive
 ENV PATH $HIVE_HOME/bin:$PATH
+COPY hive-site.xml $HIVE_HOME/conf/
+# TODO move log to other location
+RUN cd $HIVE_HOME/hcatalog/ && mkdir var && mkdir var/log
 
 
-# Derby for Hive metastore backend
-RUN cd $HIVE_HOME && $HIVE_HOME/bin/schematool -initSchema -dbType derby
+#download derby
+RUN mkdir /usr/local/derby
+RUN curl -s http://archive.apache.org/dist/db/derby/db-derby-10.10.2.0/db-derby-10.10.2.0-bin.tar.gz | tar -xz -C /usr/local/derby --strip-components 1
+RUN mkdir /usr/local/derby/data
+ENV DERBY_INSTALL /usr/local/derby
+ENV DERBY_HOME /usr/local/derby
+RUN cp $DERBY_HOME/lib/derbyclient.jar $HIVE_HOME/lib/ 
+RUN cp $DERBY_HOME/lib/derbytools.jar $HIVE_HOME/lib/ 
+
+RUN printf "\n\
+echo Aliases: \n\
+echo ------------ \n\
+echo derbystart -  start derby db for schema\n\
+alias derbystart='$DERBY_HOME/bin/startNetworkServer -h 127.0.0.1 &'\n\
+echo hiveschema - initialize hive schema with derby\n\
+alias hiveschema='$HIVE_HOME/bin/schematool -initSchema -dbType derby'\n\
+echo hivejdbc - connect to hive via jdbc\n\
+alias hivejdbc='$HIVE_HOME/bin/beeline -u  jdbc:hive2://localhost:10000'\n\
+echo hiveserver - start hive server\n\
+alias hiveserver='$HIVE_HOME/bin/hiveserver2'\n\
+" >>$HOME/.bashrc
+
+    
+
